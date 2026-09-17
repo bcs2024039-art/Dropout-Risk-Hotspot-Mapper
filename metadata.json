@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix Remix Remix Dropout-Risk-Hotspot-Mapper",
+  "description": "Karnataka dropout-risk hotspot mapper and resource placement optimizer with school-level risk breakdown, confidence flagging, and marginal returns curve.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

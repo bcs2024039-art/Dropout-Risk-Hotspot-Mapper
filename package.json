@@ -1,0 +1,17 @@
+{
+  "name": "hotspot-mapper-migration",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "postinstall": "if [ ! -f .venv/bin/python ]; then (python3 -m pip install virtualenv || (wget -qO- https://bootstrap.pypa.io/get-pip.py | python3 - && python3 -m pip install virtualenv)) && python3 -m virtualenv .venv; fi && ./.venv/bin/pip install -r backend/requirements.txt",
+    "dev": "node server.js",
+    "build": "mkdir -p dist && cp -r frontend/* dist/",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^4.2.0",
+    "leaflet-draw": "^1.0.4"
+  }
+}
