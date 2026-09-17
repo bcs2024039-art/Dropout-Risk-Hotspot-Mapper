@@ -7,3 +7,4 @@ pulp
 pyshp
 shapely
 httpx
+google-genai

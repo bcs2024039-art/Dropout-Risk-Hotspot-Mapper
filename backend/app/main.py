@@ -57,6 +57,7 @@ class OptimizeRequest(BaseModel):
     geofence: Optional[dict] = None
 
 
+from . import ask
 app = FastAPI(title="Dropout-Risk Hotspot Mapper (Karnataka demo)")
 
 app.add_middleware(
@@ -65,6 +66,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(ask.router)
 
 _schools = compute_risk(load_schools())
 _schools, _hotspots = find_hotspots(_schools)

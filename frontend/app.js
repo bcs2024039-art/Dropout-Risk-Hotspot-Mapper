@@ -233,6 +233,7 @@ async function selectHotspot(clusterId) {
 
   map.flyTo([hotspot.centroid_lat, hotspot.centroid_lon], 12, { duration: 0.6 });
   setActiveLedgerRow(clusterId);
+  document.getElementById('printReportBtn').style.display = 'inline-flex';
   resetBtn.hidden = false;
 }
 
@@ -242,6 +243,7 @@ resetBtn.addEventListener("click", () => {
   map.flyTo(KARNATAKA_CENTER, OVERVIEW_ZOOM, { duration: 0.6 });
   setActiveLedgerRow(null);
   resetBtn.hidden = true;
+  document.getElementById('printReportBtn').style.display = 'none';
 });
 
 // ---- deploy-units tab ------------------------------------------------
@@ -296,6 +298,7 @@ function switchTab(tab) {
     map.removeLayer(schoolLayer);
     map.addLayer(hubLayer);
     resetBtn.hidden = true;
+  document.getElementById('printReportBtn').style.display = 'none';
     legendEl.innerHTML = DEPLOY_LEGEND;
     if (lastOptimizeResult) map.flyTo(KARNATAKA_CENTER, OVERVIEW_ZOOM, { duration: 0.4 });
   } else if (isAbout) {
@@ -637,3 +640,96 @@ if (new URLSearchParams(window.location.search).get('embed') === '1') {
   document.querySelector('.main-wrapper').style.padding = '0';
   document.querySelector('.layout').style.height = '100vh';
 }
+
+
+// AI Query Logic
+document.getElementById('aiInput').addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    const query = e.target.value.trim();
+    if (!query) return;
+    
+    document.getElementById('aiLoading').style.display = 'block';
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
+      console.log('AI Action:', data);
+      
+      if (data.action === 'top_hotspots') {
+         const n = data.n || 5;
+         // Simulate sorting/filtering top N
+         if (hotspots && hotspots.length > 0) {
+           const topN = hotspots.slice(0, n);
+           alert(`AI found ${n} top hotspots. Selecting the worst one: District ${topN[0].district}.`);
+           selectHotspot(topN[0].cluster_id);
+         }
+      } else if (data.action === 'filter_district') {
+         document.getElementById('searchInput').value = data.district;
+         applyFilters();
+         alert(`AI applied filter for district: ${data.district}`);
+      } else if (data.action === 'explain_score') {
+         document.getElementById('searchInput').value = data.school_id;
+         applyFilters();
+         alert(`AI mapping school ID: ${data.school_id}`);
+      } else if (data.action === 'clarify') {
+         alert('AI: ' + data.message);
+      } else {
+         alert('AI did not return a valid action.');
+      }
+    } catch(err) {
+      console.error(err);
+      alert('Error querying AI');
+    } finally {
+      document.getElementById('aiLoading').style.display = 'none';
+      e.target.value = '';
+    }
+  }
+});
+
+
+// Print Logic
+document.getElementById('printReportBtn').addEventListener('click', () => {
+  if (!activeClusterId || !hotspots) return;
+  const hotspot = hotspots.find(h => h.cluster_id === activeClusterId);
+  if (!hotspot) return;
+
+  const printSection = document.getElementById('printSection');
+  document.getElementById('printTitle').innerText = `Risk Report: ${hotspot.district} District`;
+  
+  document.getElementById('printStats').innerHTML = `
+    <p><strong>Total Schools:</strong> ${hotspot.school_count}</p>
+    <p><strong>High Risk Schools:</strong> ${hotspot.high_risk_count}</p>
+    <p><strong>Average Risk Score:</strong> ${hotspot.avg_risk.toFixed(2)}</p>
+    <p><strong>Cluster Priority Lift:</strong> +${hotspot.risk_lift.toFixed(2)}</p>
+  `;
+  
+  // Also collect schools if available.
+  let schoolsHtml = '<p>No specific school list loaded.</p>';
+  // the map's schoolLayer has the loaded schools for this district if it's selected
+  let loadedSchools = [];
+  schoolLayer.eachLayer(layer => {
+      if (layer.feature && layer.feature.properties) {
+         loadedSchools.push(layer.feature.properties);
+      }
+  });
+  if (loadedSchools.length > 0) {
+      schoolsHtml = '<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px;">';
+      schoolsHtml += '<tr style="border-bottom: 2px solid #333;"><th style="text-align: left; padding: 4px;">School Code</th><th style="text-align: left; padding: 4px;">Name</th><th style="text-align: right; padding: 4px;">Risk Score</th></tr>';
+      loadedSchools.sort((a,b) => b.risk_score - a.risk_score).forEach(s => {
+          schoolsHtml += `<tr style="border-bottom: 1px solid #ccc;">
+            <td style="padding: 4px;">${s.schcd}</td>
+            <td style="padding: 4px;">${s.schname}</td>
+            <td style="padding: 4px; text-align: right;">${s.risk_score.toFixed(2)}</td>
+          </tr>`;
+      });
+      schoolsHtml += '</table>';
+  }
+  document.getElementById('printHotspots').innerHTML = schoolsHtml;
+
+  printSection.style.display = 'block';
+  window.print();
+  printSection.style.display = 'none';
+});
