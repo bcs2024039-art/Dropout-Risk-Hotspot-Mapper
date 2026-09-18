@@ -45,6 +45,7 @@ let maxLift = 1;
 let activeClusterId = null;
 let currentFilters = { management: 'all', category: 'all', q: '', risk_tier: 'all', real_weight: 0.5 };
 let currentGeofence = null;
+let isDrawingActive = false;
 let trendChartInstance = null;
 let activeTab = "hotspots";
 let lastOptimizeResult = null;
@@ -268,12 +269,19 @@ function renderDistrictChoropleth(geojson) {
         getDistrictTooltipHTML(p),
         { sticky: true }
       );
-      layer.on("mouseover", () => layer.setStyle({ weight: 2, color: "rgba(255,255,255,0.5)", fillOpacity: 0.55 }));
+      layer.on("mouseover", () => {
+        if (isDrawingActive) return;
+        layer.setStyle({ weight: 2, color: "rgba(255,255,255,0.5)", fillOpacity: 0.55 });
+      });
       layer.on("mouseout", () => {
+        if (isDrawingActive) return;
         layer.setStyle({ weight: 1, color: "rgba(255,255,255,0.15)", fillOpacity: 0.35, fillColor: getDistrictFeatureFill(p) });
       });
-      layer.on("click", () => { if (p.history) renderChart(p.display_name, p.history); });
-      layer.on("click", () => map.flyToBounds(layer.getBounds(), { duration: 0.6, maxZoom: 9 }));
+      layer.on("click", () => {
+        if (isDrawingActive) return;
+        if (p.history) renderChart(p.display_name, p.history);
+        map.flyToBounds(layer.getBounds(), { duration: 0.6, maxZoom: 9 });
+      });
     },
   }).addTo(districtLayer);
 }
@@ -303,7 +311,10 @@ function drawHotspots() {
       `<strong>${h.district}</strong><br/>${h.school_count} Schools · Risk lift +${h.risk_lift.toFixed(2)}`,
       { sticky: true }
     );
-    circle.on("click", () => selectHotspot(h.cluster_id));
+    circle.on("click", () => {
+      if (isDrawingActive) return;
+      selectHotspot(h.cluster_id);
+    });
     circle.addTo(hotspotLayer);
   });
 }
@@ -386,6 +397,7 @@ async function selectHotspot(clusterId) {
   if(currentFilters.q) params.append('q', currentFilters.q);
   if(currentFilters.risk_tier && currentFilters.risk_tier !== 'all') params.append('risk_tier', currentFilters.risk_tier);
   params.append('real_weight', currentFilters.real_weight);
+  if(currentGeofence) params.append('bounds', JSON.stringify(currentGeofence));
   const r = await fetch(`${API}/schools?${params.toString()}`);
 
   const schools = await r.json();
@@ -401,7 +413,7 @@ async function selectHotspot(clusterId) {
   }
 }
 
-resetBtn.addEventListener("click", () => {
+resetBtn.addEventListener("click", async () => {
   activeClusterId = null;
   currentSchoolsList = [];
   schoolLayer.clearLayers();
@@ -409,6 +421,9 @@ resetBtn.addEventListener("click", () => {
   setActiveLedgerRow(null);
   resetBtn.hidden = true;
   document.getElementById('printReportBtn').style.display = 'none';
+  if (currentGeofence) {
+    await clearGeofence();
+  }
 });
 
 // ---- deploy-units tab ------------------------------------------------
@@ -666,13 +681,31 @@ async function bootApp() {
 }
 bootApp();
 
-// ---- missing interactions -----------------------------------------------------
-// Leaflet Draw Setup
+// ---- Leaflet Draw Polygon Tool & Geofencing --------------------------------
 const drawnItems = new L.FeatureGroup();
 map.addLayer(drawnItems);
+
+const polygonDrawOptions = {
+  allowIntersection: false,
+  showArea: false,
+  guidelineDistance: 15,
+  drawError: {
+    color: '#ef4444',
+    message: '<strong>Error:</strong> Polygon edges cannot cross!'
+  },
+  shapeOptions: {
+    color: '#10b981',
+    fillColor: '#10b981',
+    fillOpacity: 0.22,
+    weight: 2.5,
+    dashArray: '5, 5'
+  }
+};
+
 const drawControl = new L.Control.Draw({
+  position: 'topleft',
   draw: {
-    polygon: true,
+    polygon: polygonDrawOptions,
     polyline: false,
     rectangle: false,
     circle: false,
@@ -680,31 +713,130 @@ const drawControl = new L.Control.Draw({
     marker: false
   },
   edit: {
-    featureGroup: drawnItems
+    featureGroup: drawnItems,
+    remove: true
   }
 });
 map.addControl(drawControl);
 
-map.on(L.Draw.Event.CREATED, function (event) {
-  const layer = event.layer;
-  drawnItems.clearLayers(); // Only allow one geofence for now
-  drawnItems.addLayer(layer);
-  
-  // Extract polygon coordinates for backend filtering
-  const latlngs = layer.getLatLngs()[0].map(ll => [ll.lng, ll.lat]);
-  if (latlngs.length > 0 && (latlngs[0][0] !== latlngs[latlngs.length - 1][0] || latlngs[0][1] !== latlngs[latlngs.length - 1][1])) {
-    latlngs.push(latlngs[0]);
+function extractGeofence(layer) {
+  if (!layer) return null;
+  try {
+    if (typeof layer.toGeoJSON === 'function') {
+      const geo = layer.toGeoJSON();
+      if (geo && geo.geometry && geo.geometry.type === 'Polygon') {
+        return geo.geometry;
+      }
+    }
+  } catch (err) {
+    console.warn("toGeoJSON extraction fallback:", err);
   }
-  currentGeofence = { type: 'Polygon', coordinates: [latlngs] };
-  
-  // Reload data
-  loadHotspots().then(() => drawLedger());
-  loadDistrictChoropleth();
-});
-map.on(L.Draw.Event.DELETED, function () {
+
+  try {
+    let latlngs = layer.getLatLngs ? layer.getLatLngs() : [];
+    while (Array.isArray(latlngs) && latlngs.length > 0 && Array.isArray(latlngs[0])) {
+      latlngs = latlngs[0];
+    }
+    if (!Array.isArray(latlngs) || latlngs.length < 3) return null;
+    const coords = latlngs.map(ll => {
+      if (Array.isArray(ll)) return [ll[1], ll[0]];
+      return [ll.lng, ll.lat];
+    });
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+      coords.push([...coords[0]]);
+    }
+    return { type: 'Polygon', coordinates: [coords] };
+  } catch (err) {
+    console.error("Geofence extraction error:", err);
+    return null;
+  }
+}
+
+async function applyGeofenceUpdates() {
+  try {
+    const [statsData] = await Promise.all([
+      fetchWithFilters("stats"),
+      loadHotspots().then(() => drawLedger()),
+      loadDistrictChoropleth()
+    ]);
+
+    if (statsData) {
+      document.getElementById("statTotal").textContent = statsData.total_schools.toLocaleString();
+      document.getElementById("statHigh").textContent = (statsData.risk_tier_counts.High || 0).toLocaleString();
+      document.getElementById("statHotspots").textContent = statsData.hotspot_count;
+      document.getElementById("statDistricts").textContent = statsData.districts;
+    }
+
+    if (activeClusterId !== null) {
+      const clusterStillExists = hotspots.some(h => h.cluster_id === activeClusterId);
+      if (clusterStillExists) {
+        await selectHotspot(activeClusterId);
+      } else {
+        activeClusterId = null;
+        currentSchoolsList = [];
+        schoolLayer.clearLayers();
+        setActiveLedgerRow(null);
+        resetBtn.hidden = true;
+      }
+    }
+  } catch (err) {
+    console.error("Error applying geofence updates:", err);
+  }
+}
+
+async function clearGeofence() {
   currentGeofence = null;
-  loadHotspots().then(() => drawLedger());
-  loadDistrictChoropleth();
+  drawnItems.clearLayers();
+  await applyGeofenceUpdates();
+}
+
+// Leaflet Draw Lifecycle Events
+map.on(L.Draw.Event.DRAWSTART, function () {
+  isDrawingActive = true;
+  document.getElementById("map")?.classList.add("drawing-active");
+  map.doubleClickZoom.disable();
+});
+
+map.on(L.Draw.Event.DRAWSTOP, function () {
+  isDrawingActive = false;
+  document.getElementById("map")?.classList.remove("drawing-active");
+  map.doubleClickZoom.enable();
+});
+
+map.on(L.Draw.Event.CREATED, async function (event) {
+  const layer = event.layer;
+  drawnItems.clearLayers();
+
+  if (layer.setStyle) {
+    layer.setStyle({
+      color: '#10b981',
+      weight: 2.5,
+      fillColor: '#10b981',
+      fillOpacity: 0.22,
+      dashArray: '5, 5'
+    });
+  }
+
+  drawnItems.addLayer(layer);
+  currentGeofence = extractGeofence(layer);
+  console.log("Geofence created:", currentGeofence);
+  await applyGeofenceUpdates();
+});
+
+map.on(L.Draw.Event.EDITED, async function (event) {
+  const layers = event.layers;
+  layers.eachLayer(layer => {
+    currentGeofence = extractGeofence(layer);
+  });
+  console.log("Geofence edited:", currentGeofence);
+  await applyGeofenceUpdates();
+});
+
+map.on(L.Draw.Event.DELETED, async function () {
+  currentGeofence = null;
+  drawnItems.clearLayers();
+  console.log("Geofence deleted");
+  await applyGeofenceUpdates();
 });
 
 // Charting Logic

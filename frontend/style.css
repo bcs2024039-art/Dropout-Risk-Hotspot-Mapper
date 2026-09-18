@@ -599,6 +599,53 @@ body {
   z-index: 1000;
 }
 
+/* While drawing is active, suppress interference from underlying district/hotspot layers */
+#map.drawing-active path.leaflet-interactive {
+  pointer-events: none !important;
+}
+
+/* Leaflet Draw dark theme styling */
+.leaflet-draw-toolbar {
+  background: rgba(15, 23, 42, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  overflow: hidden;
+}
+
+.leaflet-draw-toolbar a {
+  background-color: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  filter: invert(1) hue-rotate(180deg) brightness(1.2);
+  transition: background-color 0.2s ease;
+}
+
+.leaflet-draw-toolbar a:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.leaflet-draw-actions {
+  left: 32px !important;
+}
+
+.leaflet-draw-actions a {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #e2e8f0 !important;
+  font-size: 11px !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.leaflet-draw-actions a:hover {
+  background: rgba(30, 41, 59, 0.95) !important;
+  color: #34d399 !important;
+}
+
+.leaflet-draw-tooltip {
+  display: none !important;
+}
+
 
 
 /* Tooltip styling */

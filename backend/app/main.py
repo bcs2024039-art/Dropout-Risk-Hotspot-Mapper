@@ -19,9 +19,33 @@ from . import boundaries
 
 import json
 from shapely.geometry import shape, Point
+from shapely.validation import make_valid
 from pydantic import BaseModel
 from typing import Optional, List
 from fastapi.responses import RedirectResponse, Response
+
+def filter_by_geofence(df, geom_dict):
+    """Filter dataframe by polygon geometry with fast bounding box pre-filter."""
+    if geom_dict is None or len(df) == 0:
+        return df
+    try:
+        poly = shape(geom_dict)
+        if not poly.is_valid:
+            poly = make_valid(poly)
+        if poly.is_empty:
+            return df
+        # Bounding box vector pre-filter
+        minx, miny, maxx, maxy = poly.bounds
+        bbox_mask = (df['longitude'] >= minx) & (df['longitude'] <= maxx) & (df['latitude'] >= miny) & (df['latitude'] <= maxy)
+        candidates = df[bbox_mask]
+        if len(candidates) == 0:
+            return df.iloc[0:0]
+        # Exact polygon containment/intersection
+        exact_mask = candidates.apply(lambda r: poly.covers(Point(r.longitude, r.latitude)), axis=1)
+        return candidates[exact_mask]
+    except Exception as e:
+        print("Geofence filter error:", e)
+        return df
 
 from .whatif import simulate_whatif, get_all_district_infra
 from .fairness import audit_model_fairness
@@ -44,9 +68,8 @@ def apply_filters(df, management: str | None = None, category: str | None = None
             df = df[df['school_cat'].str.contains('secondary|sec\.', case=False, na=False)]
     if bounds:
         try:
-            poly = shape(json.loads(bounds))
-            mask = df.apply(lambda r: poly.contains(Point(r.longitude, r.latitude)), axis=1)
-            df = df[mask]
+            geom = json.loads(bounds) if isinstance(bounds, str) else bounds
+            df = filter_by_geofence(df, geom)
         except Exception as e:
             print("Geofence filter error:", e)
     if q and str(q).strip():
@@ -219,12 +242,7 @@ def optimize(req: OptimizeRequest):
         
         df = get_state(req.real_weight)[0]
         if req.geofence:
-            try:
-                poly = shape(req.geofence)
-                mask = df.apply(lambda r: poly.contains(Point(r.longitude, r.latitude)), axis=1)
-                df = df[mask]
-            except Exception as e:
-                print("Geofence filter error:", e)
+            df = filter_by_geofence(df, req.geofence)
     
         cov_mult = 0.85 if metric == 'time' else 1.0
         eff_radius = (radius_km * 0.7) if metric == 'time' else radius_km
