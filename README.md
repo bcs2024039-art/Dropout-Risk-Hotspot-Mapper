@@ -6,8 +6,6 @@ administrator can see where to route support — a mobile tutoring unit,
 an extra teacher posting, a transport subsidy — instead of spreading
 resources evenly.
 
-**Submitting?** See `submission/` for the project description, demo
-video script, and a checklist against Round 1's actual requirements.
 
 **Read this before presenting any number from this tool as fact:**
 locations, school attributes, and the infrastructure signal behind the
