@@ -20,7 +20,16 @@ from . import boundaries
 import json
 from shapely.geometry import shape, Point
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
+from fastapi.responses import RedirectResponse, Response
+
+from .whatif import simulate_whatif, get_all_district_infra
+from .fairness import audit_model_fairness
+
+class WhatIfRequest(BaseModel):
+    district: str
+    fix: List[str] = []
+    real_weight: float = 0.5
 
 def apply_filters(df, management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
     if management and management != 'all':
@@ -260,34 +269,22 @@ def optimize(req: OptimizeRequest):
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
-import os
-import httpx
-from fastapi.responses import Response
+@app.get("/api/whatif/districts")
+def whatif_districts():
+    return get_all_district_infra()
 
+@app.post("/api/whatif")
+def whatif_simulate(req: WhatIfRequest):
+    df = get_state(req.real_weight)[0]
+    return simulate_whatif(df, req.district, req.fix, real_weight=req.real_weight)
+
+@app.get("/api/fairness-audit")
+def fairness_audit(real_weight: float = 0.5):
+    df = get_state(real_weight)[0]
+    return audit_model_fairness(df, real_weight=real_weight)
 
 @app.get("/api/tiles/{z}/{x}/{y}")
 async def tiles(z: str, x: str, y: str):
-    import asyncio
-    key = os.environ.get('CARTO_API_KEY', '')
-    url = f"https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"
-    if key:
-        url += f"?key={key}"
-    
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(url)
-                if r.status_code == 200:
-                    return Response(content=r.content, media_type=r.headers.get('content-type', 'image/png'))
-                elif r.status_code == 429:
-                    await asyncio.sleep(1)
-                    continue
-                else:
-                    return Response(status_code=502)
-        except httpx.RequestError as e:
-            print(f"Error fetching tile {z}/{x}/{y}: {type(e)} {e}")
-            if attempt == 2:
-                return Response(status_code=502)
-            await asyncio.sleep(1)
+    esri_url = f"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+    return RedirectResponse(url=esri_url, status_code=307, headers={"Cache-Control": "public, max-age=86400"})
 
-# app.mount('/', StaticFiles(directory='frontend', html=True), name='frontend')

@@ -90,6 +90,26 @@ def fallback_intent_parser(query: str) -> dict:
             "message": "The deployment optimizer uses Integer Linear Programming (ILP) with PuLP to solve the Maximum Coverage Problem. It places K mobile units to maximize the number of risk-weighted schools covered within a specified radius, with optional equity caps per district."
         }
         
+    # Fairness & Demographic Parity questions
+    if any(w in q for w in ['fairness', 'demographic', 'parity', 'audit', 'gender', 'urban/rural']):
+        return {
+            "action": "fairness_audit",
+            "message": "Opening the Model Fairness & Demographic Parity Audit across gender and urban/rural divides."
+        }
+
+    # What-if simulation questions
+    if any(w in q for w in ['what-if', 'whatif', 'simulate', 'intervention', 'roi']):
+        target_dist = None
+        for d in districts:
+            if d in q:
+                target_dist = d.title()
+                break
+        return {
+            "action": "what_if",
+            "district": target_dist,
+            "message": f"Opening What-If Infrastructure Simulator{f' for {target_dist}' if target_dist else ''}."
+        }
+
     # Risk calculation questions
     if any(w in q for w in ['risk', 'formula', 'calculate', 'score', 'weight']):
         return {

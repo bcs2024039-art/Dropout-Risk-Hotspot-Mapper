@@ -4,10 +4,31 @@ const OVERVIEW_ZOOM = 7;
 
 const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(KARNATAKA_CENTER, OVERVIEW_ZOOM);
 
-L.tileLayer(`/api/tiles/{z}/{x}/{y}`, {
-  attribution: "&copy; OpenStreetMap &copy; CARTO",
+// High-contrast, watermark-free basemaps (Zero API key required)
+const darkCanvasLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+  attribution: "&copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
+  maxZoom: 16,
+});
+
+const osmLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 18,
-}).addTo(map);
+});
+
+const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+  attribution: "&copy; Esri &mdash; Earthstar Geographics",
+  maxZoom: 18,
+});
+
+// Default to Dark Canvas
+darkCanvasLayer.addTo(map);
+
+// Add base layer switcher control so users can toggle between Dark Canvas, OSM, and Satellite
+L.control.layers({
+  "Dark Canvas": darkCanvasLayer,
+  "OpenStreetMap": osmLayer,
+  "Satellite": satelliteLayer
+}, null, { position: "topright" }).addTo(map);
 
 const districtLayer = L.layerGroup().addTo(map);
 const hotspotLayer = L.layerGroup().addTo(map);
@@ -168,15 +189,50 @@ let cachedDistrictGeojson = null;
 let districtGeoJsonLayer = null;
 let cachedRiskNorm = null;
 let currentSchoolsList = [];
+let currentChoroplethMode = "relative_risk";
+
+function getDistrictFeatureFill(props) {
+  if (currentChoroplethMode === "lisa") {
+    const norm = typeof props.lisa_norm === "number" ? props.lisa_norm : 0.5;
+    return colorForT(norm);
+  }
+  const normVal = cachedRiskNorm ? cachedRiskNorm(props.avg_risk) : 0.5;
+  return colorForT(normVal);
+}
+
+function getDistrictTooltipHTML(p) {
+  if (currentChoroplethMode === "lisa") {
+    const clusterLabel = p.lisa_label || p.lisa_cluster || "Not Significant";
+    const iVal = typeof p.lisa_i === "number" ? (p.lisa_i > 0 ? `+${p.lisa_i}` : p.lisa_i) : "0.0";
+    const lagVal = typeof p.lisa_lag === "number" ? (p.lisa_lag > 0 ? `+${p.lisa_lag}` : p.lisa_lag) : "0.0";
+    return `<strong>${p.display_name}</strong><br/>Spatial Cluster: <strong>${clusterLabel}</strong><br/>Local Moran's I: ${iVal} (Lag: ${lagVal})<br/>${p.school_count.toLocaleString()} Schools · Avg risk ${p.avg_risk}`;
+  }
+  const liftStr = typeof p.risk_lift === "number" ? (p.risk_lift > 0 ? `+${p.risk_lift}` : p.risk_lift) : "";
+  return `<strong>${p.display_name}</strong><br/>${p.school_count.toLocaleString()} Schools · Avg risk ${p.avg_risk}${liftStr ? ` · Lift ${liftStr}` : ''}`;
+}
+
+function setChoroplethMode(mode) {
+  currentChoroplethMode = mode;
+  document.getElementById("btnChoroplethRisk")?.classList.toggle("active", mode === "relative_risk");
+  document.getElementById("btnChoroplethLisa")?.classList.toggle("active", mode === "lisa");
+  
+  if (legendEl && activeTab === "hotspots") {
+    legendEl.innerHTML = getHotspotLegendHTML();
+  }
+  updateDistrictChoroplethStyles();
+}
 
 function updateDistrictChoroplethStyles() {
-  if (districtGeoJsonLayer && cachedRiskNorm) {
+  if (districtGeoJsonLayer) {
     districtGeoJsonLayer.eachLayer((layer) => {
       if (layer.feature && layer.feature.properties) {
-        const normVal = cachedRiskNorm(layer.feature.properties.avg_risk);
+        const p = layer.feature.properties;
         layer.setStyle({
-          fillColor: colorForT(normVal),
+          fillColor: getDistrictFeatureFill(p),
         });
+        if (layer.getTooltip()) {
+          layer.setTooltipContent(getDistrictTooltipHTML(p));
+        }
       }
     });
   } else if (cachedDistrictGeojson) {
@@ -188,6 +244,13 @@ function renderDistrictChoropleth(geojson) {
   districtLayer.clearLayers();
   cachedDistrictGeojson = geojson;
 
+  if (geojson.lisa_summary) {
+    const agreeEl = document.getElementById("lisaAgreementText");
+    if (agreeEl && geojson.lisa_summary.interpretation) {
+      agreeEl.textContent = geojson.lisa_summary.interpretation;
+    }
+  }
+
   const risks = geojson.features.map((f) => f.properties.avg_risk);
   const lo = Math.min(...risks), hi = Math.max(...risks);
   cachedRiskNorm = (v) => (hi > lo ? (v - lo) / (hi - lo) : 0.5);
@@ -196,19 +259,18 @@ function renderDistrictChoropleth(geojson) {
     style: (feature) => ({
       color: "rgba(255,255,255,0.15)",
       weight: 1,
-      fillColor: colorForT(cachedRiskNorm(feature.properties.avg_risk)),
+      fillColor: getDistrictFeatureFill(feature.properties),
       fillOpacity: 0.35,
     }),
     onEachFeature: (feature, layer) => {
       const p = feature.properties;
       layer.bindTooltip(
-        `<strong>${p.display_name}</strong><br/>${p.school_count.toLocaleString()} Schools · Avg risk ${p.avg_risk}`,
+        getDistrictTooltipHTML(p),
         { sticky: true }
       );
       layer.on("mouseover", () => layer.setStyle({ weight: 2, color: "rgba(255,255,255,0.5)", fillOpacity: 0.55 }));
       layer.on("mouseout", () => {
-        const normVal = cachedRiskNorm ? cachedRiskNorm(p.avg_risk) : 0.5;
-        layer.setStyle({ weight: 1, color: "rgba(255,255,255,0.15)", fillOpacity: 0.35, fillColor: colorForT(normVal) });
+        layer.setStyle({ weight: 1, color: "rgba(255,255,255,0.15)", fillOpacity: 0.35, fillColor: getDistrictFeatureFill(p) });
       });
       layer.on("click", () => { if (p.history) renderChart(p.display_name, p.history); });
       layer.on("click", () => map.flyToBounds(layer.getBounds(), { duration: 0.6, maxZoom: 9 }));
@@ -220,6 +282,9 @@ async function loadDistrictChoropleth() {
   const geojson = await fetchWithFilters("districts/geojson");
   renderDistrictChoropleth(geojson);
 }
+
+document.getElementById("btnChoroplethRisk")?.addEventListener("click", () => setChoroplethMode("relative_risk"));
+document.getElementById("btnChoroplethLisa")?.addEventListener("click", () => setChoroplethMode("lisa"));
 
 // ---- map drawing ----------------------------------------------------
 
@@ -330,6 +395,10 @@ async function selectHotspot(clusterId) {
   setActiveLedgerRow(clusterId);
   document.getElementById('printReportBtn').style.display = 'inline-flex';
   resetBtn.hidden = false;
+
+  if (hotspot && hotspot.district) {
+    syncWhatIfWithDistrict(hotspot.district);
+  }
 }
 
 resetBtn.addEventListener("click", () => {
@@ -344,15 +413,19 @@ resetBtn.addEventListener("click", () => {
 
 // ---- deploy-units tab ------------------------------------------------
 
-const HOTSPOT_LEGEND = `
-  <span class="legend-title">Risk Level</span>
+function getHotspotLegendHTML() {
+  const lowText = currentChoroplethMode === 'lisa' ? 'Coldspot (Low-Low)' : 'Lower Risk';
+  const hiText = currentChoroplethMode === 'lisa' ? 'Hotspot (High-High)' : 'Higher Risk';
+  return `
+  <span class="legend-title">${currentChoroplethMode === 'lisa' ? 'Spatial Autocorrelation' : 'Risk Level'}</span>
   <div class="legend-scale"><span class="swatch low"></span><span class="swatch mid"></span><span class="swatch high"></span></div>
-  <div class="legend-labels" style="width: 140px;"><span>Lower Risk</span><span>Higher Risk</span></div>
+  <div class="legend-labels" style="width: 140px;"><span id="legendLowLabel">${lowText}</span><span id="legendHighLabel">${hiText}</span></div>
   <div class="legend-labels" style="width: auto; margin-top:8px; display: block; line-height: 1.4;">
-    <div style="margin-bottom: 2px;">Shaded Areas = District Average</div>
+    <div style="margin-bottom: 2px;">${currentChoroplethMode === 'lisa' ? 'Shaded = Moran\'s I Cluster' : 'Shaded Areas = District Average'}</div>
     <div>Circles = Risk Hotspots</div>
   </div>
 `;
+}
 const DEPLOY_LEGEND = `
   <span class="legend-title">Deployment Plan</span>
   <div class="legend-labels" style="margin-top:6px;"><span>&#9670; Proposed Mobile Unit Base</span></div>
@@ -363,10 +436,12 @@ function switchTab(tab) {
   activeTab = tab;
   const isHotspots = tab === "hotspots";
   const isDeploy = tab === "deploy";
+  const isFairness = tab === "fairness";
   const isAbout = tab === "about";
 
   document.getElementById("navHotspots").classList.toggle("active", isHotspots);
   document.getElementById("navDeploy").classList.toggle("active", isDeploy);
+  document.getElementById("navFairness")?.classList.toggle("active", isFairness);
   document.getElementById("navAbout").classList.toggle("active", isAbout);
   
   document.getElementById("hotspotsPanel").hidden = !isHotspots;
@@ -376,6 +451,7 @@ function switchTab(tab) {
 
   const layoutEl = document.querySelector(".layout");
   const infoViewEl = document.getElementById("infoView");
+  const fairnessViewEl = document.getElementById("fairnessView");
   const headerTitle = document.getElementById("mainHeaderTitle");
   const statStrip = document.getElementById("statStrip");
   const topbarFilters = [
@@ -388,10 +464,19 @@ function switchTab(tab) {
   
   const breadcrumb = document.getElementById("currentViewBreadcrumb");
 
-  if (isAbout) {
-    // The info section should have nothing except for the info: NO MAP
+  if (isFairness) {
+    if (layoutEl) layoutEl.style.display = "none";
+    if (infoViewEl) infoViewEl.hidden = true;
+    if (fairnessViewEl) fairnessViewEl.hidden = false;
+    topbarFilters.forEach((el) => { if (el) el.style.display = "none"; });
+    if (breadcrumb) breadcrumb.textContent = "Fairness & Demographic Parity Audit";
+    if (headerTitle) headerTitle.textContent = "Model Fairness Audit";
+    if (statStrip) statStrip.style.display = "none";
+    loadFairnessAudit();
+  } else if (isAbout) {
     if (layoutEl) layoutEl.style.display = "none";
     if (infoViewEl) infoViewEl.hidden = false;
+    if (fairnessViewEl) fairnessViewEl.hidden = true;
     topbarFilters.forEach((el) => { if (el) el.style.display = "none"; });
     if (breadcrumb) breadcrumb.textContent = "Information & Methodology";
     if (headerTitle) headerTitle.textContent = "Project Information";
@@ -399,6 +484,7 @@ function switchTab(tab) {
   } else {
     if (layoutEl) layoutEl.style.display = "grid";
     if (infoViewEl) infoViewEl.hidden = true;
+    if (fairnessViewEl) fairnessViewEl.hidden = true;
     topbarFilters.forEach((el) => {
       if (el && el.id !== "printReportBtn") el.style.display = "";
     });
@@ -417,7 +503,7 @@ function switchTab(tab) {
     map.addLayer(hotspotLayer);
     map.addLayer(schoolLayer);
     map.removeLayer(hubLayer);
-    legendEl.innerHTML = HOTSPOT_LEGEND;
+    legendEl.innerHTML = getHotspotLegendHTML();
     resetBtn.hidden = activeClusterId === null;
   } else if (isDeploy) {
     map.removeLayer(districtLayer);
@@ -431,10 +517,30 @@ function switchTab(tab) {
   }
 }
 
+function switchHotspotsSubtab(subtab) {
+  const isStats = subtab === "stats";
+  document.getElementById("subtabDistrictStats")?.classList.toggle("active", isStats);
+  document.getElementById("subtabWhatIf")?.classList.toggle("active", !isStats);
+  
+  const viewStats = document.getElementById("viewDistrictStats");
+  const viewWhatIf = document.getElementById("viewWhatIf");
+  if (viewStats) viewStats.hidden = !isStats;
+  if (viewWhatIf) viewWhatIf.hidden = isStats;
+
+  if (!isStats) {
+    runWhatIfSimulation();
+  }
+}
+
 document.getElementById("navHotspots").addEventListener("click", () => switchTab("hotspots"));
 document.getElementById("navDeploy").addEventListener("click", () => switchTab("deploy"));
+document.getElementById("navFairness")?.addEventListener("click", () => switchTab("fairness"));
 document.getElementById("navAbout").addEventListener("click", () => switchTab("about"));
 document.getElementById("infoReturnBtn")?.addEventListener("click", () => switchTab("hotspots"));
+document.getElementById("fairnessReturnBtn")?.addEventListener("click", () => switchTab("hotspots"));
+document.getElementById("subtabDistrictStats")?.addEventListener("click", () => switchHotspotsSubtab("stats"));
+document.getElementById("subtabWhatIf")?.addEventListener("click", () => switchHotspotsSubtab("whatif"));
+document.getElementById("btnSwitchToDistrictStats")?.addEventListener("click", () => switchHotspotsSubtab("stats"));
 document.getElementById("toggleColorblindBtn")?.addEventListener("click", () => updateColorblindState(!isColorblind));
 
 
@@ -772,16 +878,26 @@ if (new URLSearchParams(window.location.search).get('embed') === '1') {
 }
 
 
-// AI Query Logic
-// AI Query Logic & Interactive Popover
+// AI Query Logic & Sidebar Insights Card (Zero interference with map)
 function showAiMessage(query, message, actionText = null) {
-  const popover = document.getElementById('aiChatPopover');
+  const card = document.getElementById('aiChatPopover');
   const queryEl = document.getElementById('aiChatQuery');
   const msgEl = document.getElementById('aiChatMsg');
   const badgeEl = document.getElementById('aiActionBadge');
-  if (!popover || !msgEl) return;
+  const cardContent = document.getElementById('aiCardContent');
+  const minimizeBtn = document.getElementById('aiMinimizeBtn');
+  const topbarPill = document.getElementById('aiTopPill');
+  if (!card || !msgEl) return;
 
-  if (queryEl) queryEl.textContent = query ? `You asked: "${query}"` : '';
+  // Restore expanded state if was minimized
+  card.classList.remove('minimized');
+  if (cardContent) cardContent.style.display = 'block';
+  if (minimizeBtn) {
+    minimizeBtn.innerHTML = '&minus;';
+    minimizeBtn.title = 'Minimize';
+  }
+
+  if (queryEl) queryEl.textContent = query ? `Q: "${query}"` : '';
   msgEl.textContent = message;
 
   if (actionText && badgeEl) {
@@ -791,22 +907,80 @@ function showAiMessage(query, message, actionText = null) {
     badgeEl.style.display = 'none';
   }
 
-  popover.style.display = 'block';
+  // Display the card in the sidebar ledger
+  card.style.display = 'block';
+
+  // Highlight pulse animation
+  card.classList.remove('ai-pulse');
+  void card.offsetWidth; // Trigger reflow
+  card.classList.add('ai-pulse');
+
+  // Activate topbar indicator pill
+  if (topbarPill) {
+    topbarPill.style.display = 'inline-flex';
+  }
+
+  // Ensure sidebar scrolls to top so AI insights are immediately visible
+  const ledger = document.querySelector('.ledger');
+  if (ledger) {
+    ledger.scrollTop = 0;
+  }
 }
 
 function hideAiMessage() {
-  const popover = document.getElementById('aiChatPopover');
-  if (popover) popover.style.display = 'none';
+  const card = document.getElementById('aiChatPopover');
+  const topbarPill = document.getElementById('aiTopPill');
+  if (card) card.style.display = 'none';
+  if (topbarPill) topbarPill.style.display = 'none';
+}
+
+function toggleAiMinimize() {
+  const card = document.getElementById('aiChatPopover');
+  const cardContent = document.getElementById('aiCardContent');
+  const minimizeBtn = document.getElementById('aiMinimizeBtn');
+  if (!card || !cardContent) return;
+
+  const isMin = card.classList.toggle('minimized');
+  if (isMin) {
+    cardContent.style.display = 'none';
+    if (minimizeBtn) {
+      minimizeBtn.innerHTML = '&#43;';
+      minimizeBtn.title = 'Expand';
+    }
+  } else {
+    cardContent.style.display = 'block';
+    if (minimizeBtn) {
+      minimizeBtn.innerHTML = '&minus;';
+      minimizeBtn.title = 'Minimize';
+    }
+  }
 }
 
 document.getElementById('aiCloseBtn')?.addEventListener('click', hideAiMessage);
-document.addEventListener('click', (e) => {
-  const wrapper = document.querySelector('.ai-search-wrapper');
-  if (wrapper && !wrapper.contains(e.target)) {
-    hideAiMessage();
+document.getElementById('aiMinimizeBtn')?.addEventListener('click', toggleAiMinimize);
+document.getElementById('aiTopPill')?.addEventListener('click', () => {
+  const card = document.getElementById('aiChatPopover');
+  if (card) {
+    card.style.display = 'block';
+    card.classList.remove('minimized');
+    const content = document.getElementById('aiCardContent');
+    if (content) content.style.display = 'block';
+    const ledger = document.querySelector('.ledger');
+    if (ledger) ledger.scrollTop = 0;
   }
 });
 
+// Dismiss AI card on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const card = document.getElementById('aiChatPopover');
+    if (card && card.style.display !== 'none') {
+      hideAiMessage();
+    }
+  }
+});
+
+// Delegated or direct click for suggestion chips
 document.querySelectorAll('.ai-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     const q = chip.getAttribute('data-query');
@@ -831,26 +1005,31 @@ async function handleAiQuery(query) {
     });
     const data = await res.json();
 
-    if (data.action === 'top_hotspots') {
-      const n = data.n || 5;
-      if (document.getElementById("infoView") && !document.getElementById("infoView").hidden) {
+    // Ensure map and ledger layout is active if query is spatial
+    const ensureLayoutVisible = () => {
+      const infoView = document.getElementById("infoView");
+      const fairnessView = document.getElementById("fairnessView");
+      if ((infoView && !infoView.hidden) || (fairnessView && !fairnessView.hidden)) {
         switchTab("hotspots");
       }
+    };
+
+    if (data.action === 'top_hotspots') {
+      ensureLayoutVisible();
+      const n = data.n || 5;
       if (hotspots && hotspots.length > 0) {
         const topN = hotspots.slice(0, n);
         selectHotspot(topN[0].cluster_id);
         showAiMessage(
           query,
-          data.message || `Identified top ${n} high-priority dropout risk hotspots.`,
+          data.message || `Identified top ${n} high-priority dropout risk hotspots across Karnataka.`,
           `Action: Selected #${topN[0].cluster_id} in ${topN[0].district}`
         );
       } else {
         showAiMessage(query, data.message || `Identified top ${n} hotspots.`);
       }
     } else if (data.action === 'filter_district') {
-      if (document.getElementById("infoView") && !document.getElementById("infoView").hidden) {
-        switchTab("hotspots");
-      }
+      ensureLayoutVisible();
       const searchInput = document.getElementById('searchInput');
       if (searchInput) {
         searchInput.value = data.district;
@@ -862,9 +1041,7 @@ async function handleAiQuery(query) {
         `Action: Filtered by ${data.district}`
       );
     } else if (data.action === 'explain_score') {
-      if (document.getElementById("infoView") && !document.getElementById("infoView").hidden) {
-        switchTab("hotspots");
-      }
+      ensureLayoutVisible();
       const searchInput = document.getElementById('searchInput');
       if (searchInput) {
         searchInput.value = data.school_id;
@@ -874,6 +1051,28 @@ async function handleAiQuery(query) {
         query,
         data.message || `Located school ${data.school_id}.`,
         `Action: Located school ${data.school_id}`
+      );
+    } else if (data.action === 'fairness_audit') {
+      switchTab("fairness");
+      showAiMessage(
+        query,
+        data.message || "Viewing Model Fairness & Demographic Parity Audit across gender and urban/rural divides.",
+        "Action: Switched to Fairness Audit"
+      );
+    } else if (data.action === 'what_if') {
+      ensureLayoutVisible();
+      switchHotspotsSubtab("whatif");
+      if (data.district) {
+        const select = document.getElementById("whatIfDistrictSelect");
+        if (select) {
+          select.value = data.district;
+          runWhatIfSimulation();
+        }
+      }
+      showAiMessage(
+        query,
+        data.message || "Opened the What-If Infrastructure Simulator in the sidebar.",
+        `Action: ${data.district ? data.district + ' Simulator' : 'What-If Mode'}`
       );
     } else {
       showAiMessage(query, data.message || "Here is information based on your query.", null);
@@ -951,7 +1150,203 @@ document.addEventListener('DOMContentLoaded', () => {
           if (weightTimeout) clearTimeout(weightTimeout);
           weightTimeout = setTimeout(() => {
             applyFilters();
+            runWhatIfSimulation();
+            if (activeTab === "about" || activeTab === "fairness") {
+              loadFairnessAudit();
+            }
           }, 300);
         });
     }
+
+    initWhatIfSimulator();
 });
+
+// =========================================================
+// Task 20: What-If Infrastructure Simulator
+// =========================================================
+
+let whatIfDistricts = [];
+let whatIfCurrentDistrict = null;
+let whatIfFixedSet = new Set();
+let whatIfDebounceTimer = null;
+
+async function initWhatIfSimulator() {
+  const selectEl = document.getElementById("whatIfDistrictSelect");
+  if (!selectEl) return;
+
+  try {
+    const res = await fetch(`${API}/whatif/districts`);
+    whatIfDistricts = await res.json();
+    if (!Array.isArray(whatIfDistricts) || whatIfDistricts.length === 0) return;
+
+    selectEl.innerHTML = whatIfDistricts.map(d => 
+      `<option value="${d.district_name}">${d.display_name} (${d.total_schools.toLocaleString()} schools)</option>`
+    ).join("");
+
+    // Default to Chamarajanagara if available, or first district
+    const defaultDist = whatIfDistricts.find(d => d.district_name.toUpperCase().includes("CHAMARAJA")) || whatIfDistricts[0];
+    selectEl.value = defaultDist.district_name;
+    whatIfCurrentDistrict = defaultDist;
+
+    renderWhatIfToggles();
+    runWhatIfSimulation();
+
+    selectEl.addEventListener("change", (e) => {
+      const found = whatIfDistricts.find(d => d.district_name === e.target.value);
+      if (found) {
+        whatIfCurrentDistrict = found;
+        whatIfFixedSet.clear();
+        renderWhatIfToggles();
+        runWhatIfSimulation();
+      }
+    });
+  } catch (err) {
+    console.error("Failed to load whatif districts:", err);
+  }
+}
+
+function syncWhatIfWithDistrict(districtName) {
+  if (!districtName || !whatIfDistricts.length) return;
+  const match = whatIfDistricts.find(d => 
+    d.district_name.toLowerCase().trim() === districtName.toLowerCase().trim() ||
+    d.display_name.toLowerCase().trim() === districtName.toLowerCase().trim()
+  );
+  if (match) {
+    const sel = document.getElementById("whatIfDistrictSelect");
+    if (sel && sel.value !== match.district_name) {
+      sel.value = match.district_name;
+      whatIfCurrentDistrict = match;
+      whatIfFixedSet.clear();
+      renderWhatIfToggles();
+      runWhatIfSimulation();
+    }
+  }
+}
+
+function renderWhatIfToggles() {
+  const container = document.getElementById("whatIfToggles");
+  if (!container || !whatIfCurrentDistrict) return;
+
+  const d = whatIfCurrentDistrict;
+  const dims = [
+    { id: "toilets", name: "Toilets", gap: d.toilets_gap_pct },
+    { id: "library", name: "Library", gap: d.library_gap_pct },
+    { id: "computer", name: "Computer Lab", gap: d.computer_gap_pct },
+    { id: "internet", name: "Internet Access", gap: d.internet_gap_pct }
+  ];
+
+  container.innerHTML = dims.map(dim => {
+    const isChecked = whatIfFixedSet.has(dim.id);
+    return `
+      <div class="whatif-row ${isChecked ? 'active' : ''}">
+        <div class="whatif-dim-meta">
+          <span class="whatif-dim-name">${dim.name}</span>
+          <span class="whatif-dim-gap">${dim.gap}% gap</span>
+        </div>
+        <label class="switch" title="Toggle infrastructure fix for ${dim.name}">
+          <input type="checkbox" data-dim="${dim.id}" ${isChecked ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+    `;
+  }).join("");
+
+  container.querySelectorAll("input[type='checkbox']").forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      const dimId = e.target.getAttribute("data-dim");
+      if (e.target.checked) {
+        whatIfFixedSet.add(dimId);
+      } else {
+        whatIfFixedSet.delete(dimId);
+      }
+      e.target.closest(".whatif-row").classList.toggle("active", e.target.checked);
+      runWhatIfSimulation();
+    });
+  });
+}
+
+async function runWhatIfSimulation() {
+  if (!whatIfCurrentDistrict) return;
+  if (whatIfDebounceTimer) clearTimeout(whatIfDebounceTimer);
+
+  whatIfDebounceTimer = setTimeout(async () => {
+    try {
+      const payload = {
+        district: whatIfCurrentDistrict.district_name,
+        fix: Array.from(whatIfFixedSet),
+        real_weight: currentFilters.real_weight
+      };
+
+      const res = await fetch(`${API}/whatif`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!data || data.error) {
+        console.error("What-if simulation error:", data?.error);
+        return;
+      }
+
+      const nowRiskEl = document.getElementById("whatIfNowRisk");
+      const nowHighEl = document.getElementById("whatIfNowHigh");
+      const fixedRiskEl = document.getElementById("whatIfFixedRisk");
+      const fixedHighEl = document.getElementById("whatIfFixedHigh");
+      const rankShiftEl = document.getElementById("whatIfRankShift");
+
+      if (nowRiskEl) nowRiskEl.textContent = data.before.avg_risk.toFixed(3);
+      if (nowHighEl) nowHighEl.textContent = `${data.before.high_risk_count.toLocaleString()} High-Risk`;
+
+      if (fixedRiskEl) {
+        const pct = data.reduction.risk_reduction_pct;
+        const pctTxt = pct > 0 ? ` (-${pct}%)` : "";
+        fixedRiskEl.textContent = `${data.after.avg_risk.toFixed(3)}${pctTxt}`;
+      }
+      if (fixedHighEl) {
+        const prev = data.reduction.high_risk_prevented;
+        const prevTxt = prev > 0 ? ` (${prev.toLocaleString()} fixed)` : "";
+        fixedHighEl.textContent = `${data.after.high_risk_count.toLocaleString()} High-Risk${prevTxt}`;
+      }
+      if (rankShiftEl) {
+        rankShiftEl.textContent = data.reduction.hotspot_rank_change || "Unchanged";
+      }
+    } catch (err) {
+      console.error("What-if simulation call failed:", err);
+    }
+  }, 100);
+}
+
+// =========================================================
+// Task 22: Fairness & Demographic Parity Audit
+// =========================================================
+
+async function loadFairnessAudit() {
+  const tbody = document.getElementById("fairnessTableBody");
+  if (!tbody) return;
+
+  try {
+    const res = await fetch(`${API}/fairness-audit?real_weight=${currentFilters.real_weight}`);
+    const data = await res.json();
+    if (!data || !data.groups) return;
+
+    tbody.innerHTML = data.groups.map(g => `
+      <tr>
+        <td>
+          <span class="fairness-group-name">${g.group_name}</span>
+          <span class="fairness-dim-tag">${g.dimension}</span>
+        </td>
+        <td class="fairness-num">${g.pct_of_schools.toFixed(1)}% (${g.school_count.toLocaleString()})</td>
+        <td class="fairness-num">${g.pct_of_high_risk.toFixed(1)}% (${g.high_risk_count.toLocaleString()})</td>
+        <td class="fairness-num" style="font-weight: 600;">${g.observed_ratio.toFixed(2)}&times;</td>
+        <td class="fairness-num" style="color: var(--text-muted);">${g.expected_ratio.toFixed(2)}&times;</td>
+        <td><span class="${g.tag_class}">${g.tag}</span></td>
+        <td class="fairness-formula-note">${g.formula_weight_note} &middot; <span style="color: rgba(255,255,255,0.7);">${g.note}</span></td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    console.error("Fairness audit load failed:", err);
+    tbody.innerHTML = `<tr><td colspan="7" style="color: var(--risk-high); padding: 16px;">Failed to load fairness audit telemetry.</td></tr>`;
+  }
+}
+

@@ -31,7 +31,7 @@ function startBackend() {
   const pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python3';
 
   console.log(`Spawning python backend using ${pythonCmd} on port 8001...`);
-  pyProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.app.main:app', '--host', '0.0.0.0', '--port', '8001'], { 
+  pyProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.app.main:app', '--host', '0.0.0.0', '--port', '8001', '--reload'], { 
     stdio: 'inherit',
     env
   });
@@ -75,7 +75,15 @@ app.use(createProxyMiddleware({
   }
 }));
 
-app.use(express.static(path.join(__dirname, 'frontend')));
+app.use(express.static(path.join(__dirname, 'frontend'), {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
