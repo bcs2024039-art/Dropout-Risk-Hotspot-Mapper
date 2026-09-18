@@ -68,24 +68,31 @@ sanity check, not a proof the model is right.
 ## Architecture
 
 ```
-backend/
-  app/
-    data.py        loads the Karnataka school subset
-    risk.py         risk score: real school-level rule + real district-level infra gap
-    clustering.py    grid-cell hotspot ranking + in-cell DBSCAN grouping
-    optimizer.py     MILP resource-placement (max-coverage siting, see below)
-    boundaries.py    joins static district geometry with live risk stats
-    main.py          FastAPI app: /api/stats /api/hotspots /api/schools /api/districts /api/districts/geojson /api/optimize
-  data/
-    karnataka_schools.csv                  real, geocoded school subset
-    karnataka_district_infra_2019-20.csv    real, district-level infra gap (see scripts/)
-    karnataka_districts.geojson             real district boundary polygons (see scripts/)
-scripts/
-  build_district_infra.py        reproducible extraction of the infra CSV from thejeshgn's cached UDISE+ reports
-  build_district_boundaries.py    reproducible extraction of the boundary geojson from datameet/maps' census shapefile
-frontend/
-  index.html, style.css, app.js   Leaflet map, district choropleth, hotspot ledger, and deploy-units tab, vanilla JS
-  vendor/leaflet/                 Leaflet bundled locally (no CDN dependency at demo time)
+├── backend/
+│   ├── app/
+│   │   ├── main.py          # FastAPI application & API endpoints
+│   │   ├── data.py          # School dataset loading & caching
+│   │   ├── risk.py          # Multidimensional dropout-risk scoring model
+│   │   ├── clustering.py    # Spatial grid hotspot aggregation & DBSCAN
+│   │   ├── spatial_stats.py # Anselin Local Moran's I (LISA) autocorrelation
+│   │   ├── optimizer.py     # Maximal Covering Location Problem (MCLP/MILP)
+│   │   ├── whatif.py        # What-if infrastructure intervention simulation
+│   │   ├── fairness.py      # Demographic parity & fairness audit
+│   │   ├── boundaries.py    # District boundary polygon & live metrics joiner
+│   │   └── ask.py           # Natural language query assistant
+│   ├── data/
+│   │   ├── karnataka_schools.csv               # 74k geocoded schools
+│   │   ├── karnataka_district_infra_2019-20.csv # District infrastructure gap
+│   │   └── karnataka_districts.geojson          # District polygon boundaries
+│   └── requirements.txt     # Python backend dependencies
+├── frontend/
+│   ├── index.html           # Main single-page application dashboard
+│   ├── style.css            # Dark glassmorphism UI styles
+│   ├── app.js               # Interactive map, charts, filters & analysis
+│   └── vendor/              # Local vendor assets (Leaflet, Leaflet Draw)
+├── server.js                # Express dev/production reverse proxy
+├── metadata.json            # Application configuration metadata
+└── package.json             # Node.js project manifest & start script
 ```
 
 No build step on the frontend on purpose — one less thing to break
