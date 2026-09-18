@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
 <link rel="stylesheet" href="vendor/leaflet-draw/leaflet.draw.css" />
-<link rel="stylesheet" href="style.css?v=20260918-05" />
+<link rel="stylesheet" href="style.css?v=20260918-06" />
 </head>
 <body>
 
@@ -112,10 +112,20 @@
           <button id="resetView" class="reset-btn" hidden>View All</button>
 
           <div class="legend">
+            <span class="legend-title">Risk Level</span>
             <div class="legend-scale">
-              <span class="swatch low"></span><span class="swatch mid"></span><span class="swatch high"></span>
+              <span class="swatch low" title="Lower Risk"></span>
+              <span class="swatch mid" title="Moderate Risk"></span>
+              <span class="swatch high" title="Higher Risk"></span>
             </div>
-            <div class="legend-labels"><span id="legendLowLabel">Lower</span><span id="legendHighLabel">Higher</span></div>
+            <div class="legend-labels">
+              <span id="legendLowLabel">Lower Risk</span>
+              <span id="legendHighLabel">Higher Risk</span>
+            </div>
+            <div class="legend-notes">
+              <div style="margin-bottom: 2px;">Shaded Areas = District Average</div>
+              <div>Circles = Risk Hotspots</div>
+            </div>
           </div>
         </div>
       </section>
@@ -464,7 +474,7 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/leaflet-draw/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="app.js?v=20260918-05"></script>
+<script src="app.js?v=20260918-06"></script>
 
 <div id="printSection" style="display: none;">
     <h1 id="printTitle">District Report</h1>

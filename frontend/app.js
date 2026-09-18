@@ -429,22 +429,35 @@ resetBtn.addEventListener("click", async () => {
 // ---- deploy-units tab ------------------------------------------------
 
 function getHotspotLegendHTML() {
-  const lowText = currentChoroplethMode === 'lisa' ? 'Coldspot (Low-Low)' : 'Lower Risk';
-  const hiText = currentChoroplethMode === 'lisa' ? 'Hotspot (High-High)' : 'Higher Risk';
+  const isLisa = currentChoroplethMode === 'lisa';
+  const title = isLisa ? 'Spatial Autocorrelation' : 'Risk Level';
+  const lowText = isLisa ? 'Coldspot (Low-Low)' : 'Lower Risk';
+  const hiText = isLisa ? 'Hotspot (High-High)' : 'Higher Risk';
+  const shadedNote = isLisa ? "Shaded = Moran's I Cluster" : "Shaded Areas = District Average";
+
   return `
-  <span class="legend-title">${currentChoroplethMode === 'lisa' ? 'Spatial Autocorrelation' : 'Risk Level'}</span>
-  <div class="legend-scale"><span class="swatch low"></span><span class="swatch mid"></span><span class="swatch high"></span></div>
-  <div class="legend-labels" style="width: 140px;"><span id="legendLowLabel">${lowText}</span><span id="legendHighLabel">${hiText}</span></div>
-  <div class="legend-labels" style="width: auto; margin-top:8px; display: block; line-height: 1.4;">
-    <div style="margin-bottom: 2px;">${currentChoroplethMode === 'lisa' ? 'Shaded = Moran\'s I Cluster' : 'Shaded Areas = District Average'}</div>
+  <span class="legend-title">${title}</span>
+  <div class="legend-scale">
+    <span class="swatch low" title="${isLisa ? 'Coldspot (Low-Low)' : 'Lower Risk'}"></span>
+    <span class="swatch mid" title="${isLisa ? 'Neutral / Transition' : 'Moderate Risk'}"></span>
+    <span class="swatch high" title="${isLisa ? 'Hotspot (High-High)' : 'Higher Risk'}"></span>
+  </div>
+  <div class="legend-labels">
+    <span id="legendLowLabel">${lowText}</span>
+    <span id="legendHighLabel">${hiText}</span>
+  </div>
+  <div class="legend-notes">
+    <div style="margin-bottom: 2px;">${shadedNote}</div>
     <div>Circles = Risk Hotspots</div>
   </div>
 `;
 }
 const DEPLOY_LEGEND = `
   <span class="legend-title">Deployment Plan</span>
-  <div class="legend-labels" style="margin-top:6px;"><span>&#9670; Proposed Mobile Unit Base</span></div>
-  <div class="legend-labels"><span>Dashed circle = Service Area</span></div>
+  <div class="legend-labels" style="margin-top:6px; flex-direction: column; align-items: flex-start; gap: 4px;">
+    <span>&#9670; Proposed Mobile Unit Base</span>
+    <span style="color: var(--text-muted);">Dashed circle = Service Area</span>
+  </div>
 `;
 
 function switchTab(tab) {

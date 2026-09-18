@@ -280,12 +280,23 @@ body {
   border: 1px solid var(--border-glass);
   border-radius: 12px;
   padding: 12px 16px;
+  min-width: 220px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.legend-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
 }
 .legend-scale {
   display: flex;
-  width: 140px;
-  height: 6px;
-  border-radius: 3px;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
   overflow: hidden;
 }
 .legend-scale .swatch { flex: 1; }
@@ -295,10 +306,28 @@ body {
 .legend-labels {
   display: flex;
   justify-content: space-between;
-  width: 140px;
-  font-size: 10px;
+  align-items: center;
+  width: 100%;
+  font-size: 11px;
   color: #ffffff;
   margin-top: 6px;
+  gap: 12px;
+}
+.legend-labels #legendLowLabel {
+  text-align: left;
+  white-space: nowrap;
+}
+.legend-labels #legendHighLabel {
+  text-align: right;
+  white-space: nowrap;
+}
+.legend-notes {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.4;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
 }
 
 /* ---------- Ledger / Sidebar Section ---------- */
