@@ -11,7 +11,7 @@ KARNATAKA_2019_20_REFERENCE = {
     "source": "UDISE+ cohort data via thejeshgn/udise-report-data-downloader"
 }
 
-def compute_risk(df: pd.DataFrame) -> pd.DataFrame:
+def compute_risk(df: pd.DataFrame, real_weight: float = 0.5) -> pd.DataFrame:
     infra_df = load_district_infra()
     
     # 1. School-level deterministic signals (simulated from UDISE codes)
@@ -41,7 +41,7 @@ def compute_risk(df: pd.DataFrame) -> pd.DataFrame:
     
     # 3. Final Demo Risk Score
     # Blend the school's structural features with the district's infrastructure deficit
-    df["demo_risk_score"] = 0.5 * df["real_signal"] + 0.5 * df["infra_gap_score"]
+    df["demo_risk_score"] = real_weight * df["real_signal"] + (1.0 - real_weight) * df["infra_gap_score"]
     
     # Cap and floor
     df["demo_risk_score"] = df["demo_risk_score"].clip(0, 1)

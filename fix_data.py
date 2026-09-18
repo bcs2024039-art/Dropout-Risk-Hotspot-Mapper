@@ -1,9 +1,8 @@
-import pandas as pd
 import os
+with open('backend/app/data.py', 'r') as f:
+    content = f.read()
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-
-
+replacement = """
 QA_STATS = {
     "duplicate_schcd": 0,
     "out_of_bounds_coords": 0,
@@ -31,19 +30,10 @@ def load_schools() -> pd.DataFrame:
     QA_STATS["missing_fields"] = int(missing_mask.sum())
 
     df = df.dropna(subset=["latitude", "longitude"])
+"""
 
-    
-    # Map raw numeric codes if they exist (UDISE standard)
-    if "rururb" in df.columns:
-        df["rururb_label"] = df["rururb"].map({1: "Rural", 2: "Urban"}).fillna("Unknown")
-    else:
-        df["rururb_label"] = "Unknown"
-        
-    return df
+import re
+content = re.sub(r'def load_schools\(\) -> pd\.DataFrame:.*?df = df\.dropna\(subset=\["latitude", "longitude"\]\)', replacement, content, flags=re.DOTALL)
 
-def load_district_infra() -> pd.DataFrame:
-    """Loads 2019-20 district level infrastructure gap scores."""
-    df = pd.read_csv(os.path.join(DATA_DIR, "karnataka_district_infra_2019-20.csv"))
-    # Normalize names for joining
-    df["district_join_key"] = df["district_name"].str.strip().str.upper()
-    return df
+with open('backend/app/data.py', 'w') as f:
+    f.write(content)

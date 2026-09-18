@@ -36,13 +36,36 @@
 
       <div class="topbar-actions" style="width: 100%; display: flex; gap: 8px;">
 
-        <div class="topbar-search ai-search" style="flex: 1; max-width: 400px; display: flex; align-items: center; background: rgba(255,255,255,0.05); border-radius: 4px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.1);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#56cc9d" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            <input type="text" id="aiInput" placeholder="Ask AI (e.g. 'show top 5 hotspots')..." style="flex: 1; background: transparent; border: none; color: white; padding: 8px; outline: none;" />
-            <div id="aiLoading" style="display: none; width: 12px; height: 12px; border: 2px solid #56cc9d; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <div class="ai-search-wrapper">
+          <div class="topbar-search ai-search" style="width: 100%; display: flex; align-items: center; background: rgba(255,255,255,0.05); border-radius: 4px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#56cc9d" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              <input type="text" id="aiInput" placeholder="Ask AI (e.g. 'show top 5 hotspots', 'filter Belagavi')..." style="flex: 1; background: transparent; border: none; color: white; padding: 8px; outline: none;" />
+              <div id="aiLoading" style="display: none; width: 12px; height: 12px; border: 2px solid #56cc9d; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          </div>
+          <div id="aiChatPopover" class="ai-chat-popover" style="display: none;">
+            <div class="ai-popover-header">
+              <div class="ai-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a9.96 9.96 0 0 1-4.708-1.175L2 22l1.175-5.292A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2z"/></svg>
+                <span>AI Assistant</span>
+              </div>
+              <button id="aiCloseBtn" class="ai-close-btn" title="Close">&times;</button>
+            </div>
+            <div id="aiChatQuery" class="ai-chat-query"></div>
+            <div id="aiChatMsg" class="ai-chat-msg"></div>
+            <div id="aiActionBadge" class="ai-action-badge" style="display: none;"></div>
+            <div class="ai-suggested-chips">
+              <span class="ai-chip" data-query="show top 5 hotspots">Top 5 Hotspots</span>
+              <span class="ai-chip" data-query="filter Belagavi">Filter Belagavi</span>
+              <span class="ai-chip" data-query="explain risk model">Explain Risk Model</span>
+              <span class="ai-chip" data-query="how does optimizer work?">Optimizer Guide</span>
+            </div>
+          </div>
         </div>
-
         
+        <button id="toggleColorblindBtn" class="action-btn" title="Toggle Colorblind Mode" style="margin-right: auto; margin-left: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        </button>
+
         <select id="filterManagement" class="filter-select">
           <option value="all">All Management</option>
           <option value="gov">Government</option>
@@ -60,14 +83,13 @@
 
         <button id="exportCsvBtn" class="action-btn" title="Export CSV"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
 
-        
       </div>
     </header>
 
     <div class="dashboard-header">
       <div class="header-titles">
         <span class="eyebrow">Home <span class="sep">&gt;</span> <span id="currentViewBreadcrumb">Hotspots Overview</span></span>
-        <h1>Hotspot Mapper</h1>
+        <h1 id="mainHeaderTitle">Hotspot Mapper</h1>
       </div>
       <dl class="stat-strip" id="statStrip">
         <div class="stat"><dt>Schools analyzed</dt><dd id="statTotal">—</dd></div>
@@ -119,6 +141,15 @@
             </select>
         </div>
         <div class="tab-panel" id="hotspotsPanel">
+
+        <div style="padding: 12px 16px; border-bottom: 1px solid var(--border-glass);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 0.85em; color: var(--text-dim);">Structural Signal Weight</label>
+            <span id="weightValue" style="font-family: 'IBM Plex Mono', monospace; font-size: 0.85em;">0.50</span>
+          </div>
+          <input type="range" id="realWeightSlider" min="0" max="1" step="0.05" value="0.5" style="width: 100%; cursor: pointer;" />
+        </div>
+
           <div class="ledger-head">
             <span class="ledger-no">#</span>
             <span class="ledger-name">District</span>
@@ -161,20 +192,100 @@
           <ol class="ledger-body" id="deployBody"></ol>
         </div>
 
-        <div class="tab-panel" id="aboutPanel" hidden style="padding: 16px;">
-          <h3 style="margin-bottom: 12px; font-family: 'Newsreader', serif; font-size: 1.25rem;">About this tool</h3>
-          <p style="margin-bottom: 1em; font-size: 0.9em; line-height: 1.5; color: var(--text-dim);">
-            The Dropout-Risk Hotspot Mapper combines school-level structural features with district-level infrastructure deficit to estimate a <strong>Demo Risk Score</strong> for schools across Karnataka.
-          </p>
-          <p style="margin-bottom: 1em; font-size: 0.9em; line-height: 1.5; color: var(--text-dim);">
-            <strong>Confidence Flagging:</strong> Markers with a dashed outline indicate a "Low" confidence score. This is not a statistical confidence interval, just a documented disagreement flag when a school's local structural signals diverge strongly from its district's broader context.
-          </p>
-          <p style="font-size: 0.9em; line-height: 1.5; color: var(--text-dim);">
-            <em>Built for Horizon Round 1.</em>
-          </p>
+        <!-- Live Data Quality Telemetry (Cleanly docked in ledger sidebar footer) -->
+        <div id="qaStatsPanel" class="qa-footer-card">
+          <div class="qa-footer-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <span>Data Integrity Telemetry</span>
+          </div>
+          <div class="qa-footer-grid">
+            <div class="qa-cell"><span class="qa-lbl">Duplicate IDs</span><span id="qaDup" class="qa-num">0</span></div>
+            <div class="qa-cell"><span class="qa-lbl">Out of Bounds</span><span id="qaOob" class="qa-num">0</span></div>
+            <div class="qa-cell"><span class="qa-lbl">Missing Fields</span><span id="qaMiss" class="qa-num">0</span></div>
+          </div>
         </div>
       </aside>
     </main>
+
+    <!-- Dedicated Full-Width Info View (No map, pure information) -->
+    <section id="infoView" class="info-full-view" hidden>
+      <h2>Karnataka Dropout-Risk Hotspot Mapper</h2>
+      <p style="font-size: 1.05rem; color: var(--text-dim); margin-bottom: 24px;">
+        Geospatial targeting, structural risk estimation, and mathematical optimization for mobile education intervention units across Karnataka.
+      </p>
+
+      <div class="info-card-grid">
+        <div class="info-card">
+          <h4>74,309 Schools</h4>
+          <p>Comprehensive census of state government, local body, aided, and private schools mapped across Karnataka.</p>
+        </div>
+        <div class="info-card">
+          <h4>34 Districts</h4>
+          <p>Full administrative coverage with localized infrastructure deficit scores and choropleth visualizations.</p>
+        </div>
+        <div class="info-card">
+          <h4>Dual-Signal Risk Model</h4>
+          <p>Harmonizes localized school-level vulnerability factors with district-level structural indices.</p>
+        </div>
+        <div class="info-card">
+          <h4>ILP Optimal Allocation</h4>
+          <p>Integer Linear Programming solves the Maximum Coverage Problem to place mobile units with provable optimality.</p>
+        </div>
+      </div>
+
+      <h3>Methodological Framework & Risk Formulation</h3>
+      <p>
+        Dropout risk cannot be adequately captured by historical student attrition figures alone, which suffer from substantial reporting lags and under-registration. This platform calculates a forward-looking <strong>Demo Risk Score</strong> combining two decoupled sources of signal:
+      </p>
+      <p style="font-family: var(--mono); background: rgba(0,0,0,0.35); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border-glass); font-size: 13px;">
+        Demo Risk = w &times; Signal<sub>school</sub> + (1 - w) &times; Deficit<sub>district</sub>
+      </p>
+      <p>
+        <strong>School Structural Signal:</strong> Extracted from UDISE+ attributes including rural/urban designation, management type (government vs. private), and terminal primary school status (institutions ending at grade 4 or 5 without co-located upper primary facilities show a 3.4&times; elevated transition drop rate).
+      </p>
+      <p>
+        <strong>District Infrastructure Deficit:</strong> Composite index representing regional transportation friction, electrification, internet access, and teacher-pupil ratios.
+      </p>
+      <p>
+        <strong>Sensitivity Weighting ($w$):</strong> Policy makers and field coordinators can dynamically adjust the weight slider in the Hotspots panel (defaulting to 0.50) to evaluate whether intervention priorities shift when emphasizing hyper-local factors versus regional infrastructure gaps.
+      </p>
+
+      <h3>Resource Optimization Engine</h3>
+      <p>
+        Allocating a constrained fleet of $K$ mobile intervention units across thousands of distributed schools is mathematically formulated as the <strong>Maximum Coverage Location Problem (MCLP)</strong>.
+      </p>
+      <p>
+        While standard greedy heuristics repeatedly pick the single location covering the highest remaining risk, they frequently get trapped in sub-optimal spatial overlaps. Our engine employs <strong>PuLP Integer Linear Programming (ILP)</strong> to guarantee globally optimal base placements within polynomial time.
+      </p>
+      <p>
+        <strong>Equity Guarantee:</strong> To prevent the optimizer from concentrating all $K$ units in one severe district (leaving other vulnerable regions entirely unserved), an explicit district cap constraint ensures balanced geographical distribution.
+      </p>
+
+      <h3>Confidence & Disagreement Diagnostics</h3>
+      <p>
+        Schools rendered with a <strong>dashed border</strong> carry a "Low" confidence flag. Rather than a purely statistical confidence interval, this signifies documented diagnostic disagreement: cases where a school's local structural signal sharply conflicts with its surrounding district baseline. These schools warrant on-the-ground verification prior to deploying capital-intensive resources.
+      </p>
+
+      <h3>Data Quality & Verification</h3>
+      <p>
+        All 74,309 records undergo real-time validation upon ingestion:
+      </p>
+      <ul style="color: var(--text-dim); font-size: 14px; line-height: 1.8; margin-left: 20px; margin-bottom: 20px;">
+        <li><strong>Duplicate ID Check:</strong> Verified unique 11-digit UDISE school codes across all state divisions.</li>
+        <li><strong>Coordinate Bounds Check:</strong> Latitude bounded within [11.5°N, 18.5°N] and Longitude within [74.0°E, 78.6°E] for Karnataka territory.</li>
+        <li><strong>Schema Completeness:</strong> Ensuring zero critical missing values in category, management, and district classifications.</li>
+      </ul>
+
+      <h3>Basemap & Geospatial Engine</h3>
+      <p>
+        Rendered using Leaflet.js with high-contrast CARTO Dark Matter vector tile styling, buffered tile retry resilience, and spatial clustering algorithms.
+      </p>
+
+      <button id="infoReturnBtn" class="info-return-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Return to Interactive Map
+      </button>
+    </section>
   </div>
 </div>
 

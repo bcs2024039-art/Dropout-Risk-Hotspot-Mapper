@@ -49,6 +49,7 @@ def apply_filters(df, management: str | None = None, category: str | None = None
     return df
 
 class OptimizeRequest(BaseModel):
+    real_weight: float = 0.5
     k: int = 10
     radius_km: float = 20.0
     metric: str = "radius"
@@ -68,10 +69,19 @@ app.add_middleware(
 )
 app.include_router(ask.router)
 
-_schools = compute_risk(load_schools())
-_schools, _hotspots = find_hotspots(_schools)
-_district_geojson = boundaries.build_choropleth(_schools)
 
+
+
+from .data import QA_STATS
+
+_state_cache = {}
+def get_state(real_weight: float = 0.5):
+    if real_weight not in _state_cache:
+        s = compute_risk(load_schools(), real_weight=real_weight)
+        s, h = find_hotspots(s)
+        g = boundaries.build_choropleth(s)
+        _state_cache[real_weight] = (s, h, g)
+    return _state_cache[real_weight]
 
 def _school_row(row) -> dict:
     return {
@@ -95,8 +105,8 @@ def _school_row(row) -> dict:
 
 
 @app.get("/api/stats")
-def stats(management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
-    df = apply_filters(_schools, management, category, bounds, q, risk_tier)
+def stats(real_weight: float = 0.5, management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
+    df = apply_filters(get_state(real_weight)[0], management, category, bounds, q, risk_tier)
     _, filtered_hotspots = find_hotspots(df) if len(df) > 0 else (df, [])
     tier_counts = df["risk_tier"].value_counts().to_dict()
     return {
@@ -105,12 +115,13 @@ def stats(management: str | None = None, category: str | None = None, bounds: st
         "risk_tier_counts": {str(k): int(v) for k, v in tier_counts.items()},
         "hotspot_count": int(len(filtered_hotspots)),
         "karnataka_2019_20_reference": KARNATAKA_2019_20_REFERENCE,
+        "data_quality": QA_STATS,
     }
 
 
 @app.get("/api/hotspots")
-def hotspots(management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
-    df = apply_filters(_schools, management, category, bounds, q, risk_tier)
+def hotspots(real_weight: float = 0.5, management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
+    df = apply_filters(get_state(real_weight)[0], management, category, bounds, q, risk_tier)
     if len(df) == 0: return []
     _, filtered_hotspots = find_hotspots(df)
     return [
@@ -130,6 +141,7 @@ def hotspots(management: str | None = None, category: str | None = None, bounds:
 
 @app.get("/api/schools")
 def schools(
+    real_weight: float = 0.5,
     cluster_id: int | None = Query(default=None),
     district: str | None = Query(default=None),
     risk_tier: str | None = Query(default=None),
@@ -139,7 +151,7 @@ def schools(
     category: str | None = None,
     bounds: str | None = None,
 ):
-    df = apply_filters(_schools, management, category, bounds, q, risk_tier)
+    df = apply_filters(get_state(real_weight)[0], management, category, bounds, q, risk_tier)
     if cluster_id is not None:
         # Recluster to get the same cluster_ids
         df, _ = find_hotspots(df)
@@ -152,18 +164,18 @@ def schools(
 
 
 @app.get("/api/districts")
-def districts():
-    return sorted(_schools["dtname"].dropna().unique().tolist())
+def districts(real_weight: float = 0.5):
+    return sorted(get_state(real_weight)[0]["dtname"].dropna().unique().tolist())
 
 
 @app.get("/api/districts/geojson")
-def districts_geojson(management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
+def districts_geojson(real_weight: float = 0.5, management: str | None = None, category: str | None = None, bounds: str | None = None, q: str | None = None, risk_tier: str | None = None):
     import copy
     import numpy as np
     
     # We must recalculate district averages if filtered, or just return the static ones with history if not
-    df = apply_filters(_schools, management, category, bounds, q, risk_tier)
-    new_geojson = boundaries.build_choropleth(df) if len(df) > 0 else copy.deepcopy(_district_geojson)
+    df = apply_filters(get_state(real_weight)[0], management, category, bounds, q, risk_tier)
+    new_geojson = boundaries.build_choropleth(df) if len(df) > 0 else copy.deepcopy(get_state(real_weight)[2])
     
     # Add history for charting
     for f in new_geojson["features"]:
@@ -182,10 +194,10 @@ def districts_geojson(management: str | None = None, category: str | None = None
 
 
 @app.get("/api/optimize/curve")
-def optimize_curve(k_max: int = 40, radius_km: float = 20.0, metric: str = "radius", equity: bool = True, max_per_district: int = None):
+def optimize_curve(real_weight: float = 0.5, k_max: int = 40, radius_km: float = 20.0, metric: str = "radius", equity: bool = True, max_per_district: int = None):
     cap = max_per_district if equity else None
     eff_radius = (radius_km * 0.7) if metric == 'time' else radius_km
-    return optimizer.solve_curve(_schools, k_max=k_max, radius_km=eff_radius, max_per_district=cap)
+    return optimizer.solve_curve(get_state(real_weight)[0], k_max=k_max, radius_km=eff_radius, max_per_district=cap)
 
 @app.post("/api/optimize")
 def optimize(req: OptimizeRequest):
@@ -196,7 +208,7 @@ def optimize(req: OptimizeRequest):
         metric = req.metric
         max_per_district = req.max_per_district if req.equity else None
         
-        df = _schools
+        df = get_state(req.real_weight)[0]
         if req.geofence:
             try:
                 poly = shape(req.geofence)
@@ -252,19 +264,30 @@ import os
 import httpx
 from fastapi.responses import Response
 
+
 @app.get("/api/tiles/{z}/{x}/{y}")
 async def tiles(z: str, x: str, y: str):
+    import asyncio
     key = os.environ.get('CARTO_API_KEY', '')
     url = f"https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"
     if key:
         url += f"?key={key}"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(url)
-            return Response(content=r.content, media_type=r.headers.get('content-type', 'image/png'))
-    except httpx.RequestError as e:
-        print(f"Error fetching tile {z}/{x}/{y}: {e}")
-        return Response(status_code=502)
-
+    
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url)
+                if r.status_code == 200:
+                    return Response(content=r.content, media_type=r.headers.get('content-type', 'image/png'))
+                elif r.status_code == 429:
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    return Response(status_code=502)
+        except httpx.RequestError as e:
+            print(f"Error fetching tile {z}/{x}/{y}: {type(e)} {e}")
+            if attempt == 2:
+                return Response(status_code=502)
+            await asyncio.sleep(1)
 
 # app.mount('/', StaticFiles(directory='frontend', html=True), name='frontend')
