@@ -197,6 +197,29 @@ routing/cost data before this plan drives an actual budget.
 No extra setup: `pulp` is in `requirements.txt` and bundles CBC, so
 `pip install -r requirements.txt` is still the only step.
 
+## Deploying to Vercel
+
+This repository is pre-configured with Vercel Serverless Python support (`@vercel/python`) and static asset routing.
+
+### One-Click / Git Deployment
+
+1. Push your repository to **GitHub**, **GitLab**, or **Bitbucket**.
+2. Go to [vercel.com](https://vercel.com) and click **"Add New Project"**.
+3. Import your repository.
+4. **Environment Variables**:
+   - `GEMINI_API_KEY`: *(Optional)* Your Gemini API key for natural language queries in the assistant.
+5. Click **Deploy**. Vercel will automatically build the serverless functions in `api/index.py` and serve the static files from `frontend/`.
+
+### Vercel CLI Deployment
+
+```bash
+# Install Vercel CLI if you haven't already
+npm i -g vercel
+
+# Login and deploy
+vercel
+```
+
 ## Reproducing or updating the real infra data
 
 `backend/data/karnataka_district_infra_2019-20.csv` was built once
